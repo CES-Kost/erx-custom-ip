@@ -2,7 +2,7 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.10"
+SCRIPT_VERSION="2.0"
 
 # 📌 Config file location
 CONFIG_FILE="/config/scripts/update_custom_ip.conf"
@@ -11,6 +11,9 @@ SCRIPT_PATH="/config/scripts/update_custom_ip.sh"
 GITHUB_REPO="CES-Kost/erx-custom-ip"
 VERSION_FILE_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main/version.txt"
 SCRIPT_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main/update_custom_ip.sh"
+
+# Default update interval (in minutes)
+DEFAULT_INTERVAL=180  # 3 hours
 
 # 🛠 Function: Log messages
 log_message() {
@@ -54,7 +57,7 @@ read_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
         source "$CONFIG_FILE"
     else
-        log_message "⚠️ No config file found. Run '$0 install <API_URL>' to set it up."
+        log_message "⚠️ No config file found. Run '$0 install <API_URL> [INTERVAL]' to set it up."
         exit 1
     fi
 }
@@ -62,6 +65,7 @@ read_config() {
 write_config() {
     echo "API_URL=\"$API_URL\"" > "$CONFIG_FILE"
     echo "APP_API_KEY=\"$APP_API_KEY\"" >> "$CONFIG_FILE"
+    echo "UPDATE_INTERVAL=\"$UPDATE_INTERVAL\"" >> "$CONFIG_FILE"
 }
 
 # 🚀 Function: Send Public IP & MAC to API
@@ -83,12 +87,15 @@ update_api() {
 # 🛠 Function: Install
 install_script() {
     if [[ -z "$1" ]]; then
-        echo "Usage: $0 install <API_URL>"
+        echo "Usage: $0 install <API_URL> [INTERVAL]"
         exit 1
     fi
 
     API_URL="$1"
+    UPDATE_INTERVAL="${2:-$DEFAULT_INTERVAL}"  # Use default interval if not provided
+
     log_message "🛠 Installing script using API: $API_URL"
+    log_message "⏳ Update interval set to $UPDATE_INTERVAL minutes."
 
     # Fetch MAC address
     MAC_ADDRESS=$(get_mac_address)
@@ -107,12 +114,17 @@ install_script() {
     write_config  # Save API details
 
     # Install cron job
-    log_message "🛠 Installing cron job to update public IP every 3 hours..."
-    (crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH" ) || (
-        echo "0 */3 * * * $SCRIPT_PATH update" | crontab -
-    )
+    CRON_JOB="*/$UPDATE_INTERVAL * * * * $SCRIPT_PATH update"
+    log_message "🛠 Installing cron job to update public IP every $UPDATE_INTERVAL minutes..."
 
-    log_message "✅ Installation complete!"
+    # Remove any existing cron job for this script
+    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH") | crontab -
+    
+    # Add new cron job
+    (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
+
+    log_message "✅ Cron job installed: $CRON_JOB"
+    log_message "📌 Use 'crontab -l' to verify."
 
     # 🔥 Run an update immediately after install
     log_message "🚀 Running first update now..."
@@ -125,7 +137,7 @@ remove_script() {
 
     # Remove cron job
     log_message "🛠 Removing cron job..."
-    crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | crontab -
+    (crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH") | crontab -
 
     # Remove config file
     log_message "🗑 Deleting config file..."
@@ -141,13 +153,13 @@ case "$1" in
         update_api
         ;;
     install)
-        install_script "$2"
+        install_script "$2" "$3"
         ;;
     remove)
         remove_script
         ;;
     *)
-        echo "Usage: $0 {install <API_URL>|update|remove}"
+        echo "Usage: $0 {install <API_URL> [INTERVAL]|update|remove}"
         exit 1
         ;;
 esac
