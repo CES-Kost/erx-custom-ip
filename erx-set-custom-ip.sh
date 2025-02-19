@@ -2,7 +2,7 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.9"
+SCRIPT_VERSION="1.10"
 
 # 📌 Config file location
 CONFIG_FILE="/config/scripts/update_custom_ip.conf"
@@ -113,6 +113,10 @@ install_script() {
     )
 
     log_message "✅ Installation complete!"
+
+    # 🔥 Run an update immediately after install
+    log_message "🚀 Running first update now..."
+    update_api
 }
 
 # 🗑 Function: Remove Script & Cron
