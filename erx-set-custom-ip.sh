@@ -2,12 +2,13 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.2"
+SCRIPT_VERSION="1.3"
 
 # 📌 GitHub repo for updates
 GITHUB_REPO="CES-Kost/erx-custom-ip"
 SCRIPT_NAME="erx-set-custom-ip.sh"
 SCRIPT_PATH="/config/scripts/update_custom_ip.sh"
+CONFIG_FILE="/config/scripts/api_url.conf"
 LOG_FILE="/var/log/update_custom_ip.log"
 
 # 🛠 Function: Log messages
@@ -33,6 +34,18 @@ update_script() {
     fi
 }
 
+# 📡 Function: Get or prompt for API URL
+get_api_url() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        API_URL=$(cat "$CONFIG_FILE")
+    else
+        read -p "Enter the API update URL: " API_URL
+        echo "$API_URL" > "$CONFIG_FILE"
+        log_message "✅ API URL saved to $CONFIG_FILE"
+    fi
+    echo "$API_URL"
+}
+
 # 🌎 Get public IP
 get_public_ip() {
     PUBLIC_IP=$(curl -s ifconfig.me)
@@ -43,20 +56,26 @@ get_public_ip() {
     echo "$PUBLIC_IP"
 }
 
-# 🚀 Function: Set override-hostname-ip
-update_override_ip() {
+# 🚀 Function: Send update to API
+send_update() {
     PUBLIC_IP=$(get_public_ip)
-    log_message "🌍 Setting Public IP: $PUBLIC_IP"
+    API_URL=$(get_api_url)
 
-    configure
-    # Delete the existing override-hostname-ip (if it exists)
-    delete system ip override-hostname-ip || log_message "ℹ️ No previous override-hostname-ip to delete."
-    set system ip override-hostname-ip "$PUBLIC_IP"
-    commit
-    save
-    exit
+    log_message "🌍 Sending Public IP: $PUBLIC_IP to API: $API_URL"
 
-    log_message "✅ Public IP updated successfully!"
+    DEVICE_ID=$(cat /sys/class/net/eth0/address | tr -d ':')  # Use MAC address as device identifier
+
+    JSON_PAYLOAD=$(cat <<EOF
+{
+  "deviceId": "$DEVICE_ID",
+  "publicIp": "$PUBLIC_IP"
+}
+EOF
+)
+
+    RESPONSE=$(curl -s -X POST "$API_URL" -H "Content-Type: application/json" -d "$JSON_PAYLOAD")
+
+    log_message "✅ API Response: $RESPONSE"
 }
 
 # 🛠 Function: Install cron job
@@ -79,13 +98,9 @@ remove_script() {
     log_message "🛠 Removing cron job..."
     crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | crontab -
 
-    # Delete override-hostname-ip
-    log_message "🗑 Removing override-hostname-ip..."
-    configure
-    delete system ip override-hostname-ip
-    commit
-    save
-    exit
+    # Remove saved API URL
+    log_message "🗑 Removing API URL config..."
+    rm -f "$CONFIG_FILE"
 
     # Remove script
     log_message "🗑 Deleting script file..."
@@ -98,11 +113,11 @@ remove_script() {
 case "$1" in
     update)
         update_script
-        update_override_ip
+        send_update
         ;;
     install)
         install_cron
-        update_override_ip
+        send_update
         ;;
     remove)
         remove_script
