@@ -6,8 +6,10 @@ services:
     container_name: uisp-ip-updater
     restart: always
     ports:
-      - "8000:8000"
+      - "8000:8000" # Change port if needed
     environment:
       UISP_API_URL: "https://uisp.yourdomain.com/nms/api/v2.1"
-      UISP_API_KEY: "your-uisp-api-key"
-      APP_API_KEY: "your-secure-app-key"
+      UISP_API_KEY: "${UISP_API_KEY}"  # Load from .env file or set manually
+      APP_API_KEY: "${APP_API_KEY}"  # Load from .env file or set manually
+    volumes:
+      - ./logs:/app/logs  # Optional logging

@@ -2,13 +2,10 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.3"
+SCRIPT_VERSION="1.6"
 
-# 📌 GitHub repo for updates
-GITHUB_REPO="CES-Kost/erx-custom-ip"
-SCRIPT_NAME="erx-set-custom-ip.sh"
-SCRIPT_PATH="/config/scripts/update_custom_ip.sh"
-CONFIG_FILE="/config/scripts/api_url.conf"
+# 📌 Config file location
+CONFIG_FILE="/config/scripts/update_custom_ip.conf"
 LOG_FILE="/var/log/update_custom_ip.log"
 
 # 🛠 Function: Log messages
@@ -16,37 +13,7 @@ log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
 }
 
-# 🔄 Function: Check for script updates
-update_script() {
-    log_message "🔄 Checking for script updates..."
-
-    # Get latest version from GitHub
-    LATEST_VERSION=$(curl -s "https://raw.githubusercontent.com/$GITHUB_REPO/main/version.txt")
-
-    if [[ "$LATEST_VERSION" != "$SCRIPT_VERSION" ]]; then
-        log_message "🚀 New version ($LATEST_VERSION) available! Updating script..."
-        curl -sL "https://raw.githubusercontent.com/$GITHUB_REPO/main/$SCRIPT_NAME" -o "$SCRIPT_PATH"
-        chmod +x "$SCRIPT_PATH"
-        log_message "✅ Script updated to version $LATEST_VERSION. Restarting..."
-        exec "$SCRIPT_PATH" update
-    else
-        log_message "✔️ Script is up to date (v$SCRIPT_VERSION)."
-    fi
-}
-
-# 📡 Function: Get or prompt for API URL
-get_api_url() {
-    if [[ -f "$CONFIG_FILE" ]]; then
-        API_URL=$(cat "$CONFIG_FILE")
-    else
-        read -p "Enter the API update URL: " API_URL
-        echo "$API_URL" > "$CONFIG_FILE"
-        log_message "✅ API URL saved to $CONFIG_FILE"
-    fi
-    echo "$API_URL"
-}
-
-# 🌎 Get public IP
+# 🌎 Function: Get public IP
 get_public_ip() {
     PUBLIC_IP=$(curl -s ifconfig.me)
     if [[ -z "$PUBLIC_IP" ]]; then
@@ -56,55 +23,72 @@ get_public_ip() {
     echo "$PUBLIC_IP"
 }
 
-# 🚀 Function: Send update to API
-send_update() {
-    PUBLIC_IP=$(get_public_ip)
-    API_URL=$(get_api_url)
-
-    log_message "🌍 Sending Public IP: $PUBLIC_IP to API: $API_URL"
-
-    DEVICE_ID=$(cat /sys/class/net/eth0/address | tr -d ':')  # Use MAC address as device identifier
-
-    JSON_PAYLOAD=$(cat <<EOF
-{
-  "deviceId": "$DEVICE_ID",
-  "publicIp": "$PUBLIC_IP"
+# 🔍 Function: Get MAC Address
+get_mac_address() {
+    cat /sys/class/net/eth0/address | tr -d ':'
 }
-EOF
-)
 
-    RESPONSE=$(curl -s -X POST "$API_URL" -H "Content-Type: application/json" -d "$JSON_PAYLOAD")
+# 📡 Function: Read/Write Config File
+read_config() {
+    if [[ -f "$CONFIG_FILE" ]]; then
+        source "$CONFIG_FILE"
+    else
+        log_message "⚠️ No config file found. Run '$0 install' to set it up."
+        exit 1
+    fi
+}
+
+write_config() {
+    echo "API_URL=\"$API_URL\"" > "$CONFIG_FILE"
+    echo "APP_API_KEY=\"$APP_API_KEY\"" >> "$CONFIG_FILE"
+}
+
+# 🚀 Function: Send Public IP & MAC to API
+update_api() {
+    read_config
+    PUBLIC_IP=$(get_public_ip)
+    MAC_ADDRESS=$(get_mac_address)
+
+    log_message "🌍 Sending Public IP: $PUBLIC_IP for MAC: $MAC_ADDRESS"
+
+    RESPONSE=$(curl -s -X POST "$API_URL/update-ip" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $APP_API_KEY" \
+        -d "{\"macAddress\": \"$MAC_ADDRESS\", \"publicIp\": \"$PUBLIC_IP\"}")
 
     log_message "✅ API Response: $RESPONSE"
 }
 
-# 🛠 Function: Install cron job
-install_cron() {
-    log_message "🛠 Installing cron job to update public IP every 3 hours..."
+# 🛠 Function: Install
+install_script() {
+    log_message "🛠 Installing script..."
 
-    # Add cron job (if not exists)
-    (crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH" ) || (
-        echo "0 */3 * * * $SCRIPT_PATH update" | crontab -
+    # Prompt for API details
+    read -p "Enter API Update URL (e.g., https://api.yourdomain.com): " API_URL
+    read -p "Enter APP_API_KEY: " APP_API_KEY
+
+    write_config  # Save API details
+
+    # Install cron job
+    log_message "🛠 Installing cron job to update public IP every 3 hours..."
+    (crontab -l 2>/dev/null | grep -q "$0" ) || (
+        echo "0 */3 * * * $0 update" | crontab -
     )
 
-    log_message "✅ Cron job installed successfully."
+    log_message "✅ Installation complete!"
 }
 
-# 🗑 Function: Remove script and settings
+# 🗑 Function: Remove Script & Cron
 remove_script() {
     log_message "🚨 Removing script and settings..."
 
     # Remove cron job
     log_message "🛠 Removing cron job..."
-    crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | crontab -
+    crontab -l 2>/dev/null | grep -v "$0" | crontab -
 
-    # Remove saved API URL
-    log_message "🗑 Removing API URL config..."
+    # Remove config file
+    log_message "🗑 Deleting config file..."
     rm -f "$CONFIG_FILE"
-
-    # Remove script
-    log_message "🗑 Deleting script file..."
-    rm -f "$SCRIPT_PATH"
 
     log_message "✅ Removal completed!"
 }
@@ -112,12 +96,10 @@ remove_script() {
 # 🔧 Handle script actions
 case "$1" in
     update)
-        update_script
-        send_update
+        update_api
         ;;
     install)
-        install_cron
-        send_update
+        install_script
         ;;
     remove)
         remove_script
