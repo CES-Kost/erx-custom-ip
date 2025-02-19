@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  uisp-ip-updater:
+    build: .
+    container_name: uisp-ip-updater
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      UISP_API_URL: "https://uisp.yourdomain.com/nms/api/v2.1"
+      UISP_API_KEY: "your-uisp-api-key"
+      APP_API_KEY: "your-secure-app-key"
