@@ -2,7 +2,7 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.0"
+SCRIPT_VERSION="1.1"
 
 # 📌 GitHub repo for updates
 GITHUB_REPO="CES-Kost/erx-custom-ip"
@@ -49,6 +49,8 @@ update_override_ip() {
     log_message "🌍 Setting Public IP: $PUBLIC_IP"
 
     configure
+    # Delete the existing override-hostname-ip (if it exists)
+    delete system ip override-hostname-ip || log_message "ℹ️ No previous override-hostname-ip to delete."
     set system ip override-hostname-ip "$PUBLIC_IP"
     commit
     save
