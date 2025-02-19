@@ -2,7 +2,7 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.8"
+SCRIPT_VERSION="1.9"
 
 # 📌 Config file location
 CONFIG_FILE="/config/scripts/update_custom_ip.conf"
@@ -54,7 +54,7 @@ read_config() {
     if [[ -f "$CONFIG_FILE" ]]; then
         source "$CONFIG_FILE"
     else
-        log_message "⚠️ No config file found. Run '$0 install' to set it up."
+        log_message "⚠️ No config file found. Run '$0 install <API_URL>' to set it up."
         exit 1
     fi
 }
@@ -82,11 +82,27 @@ update_api() {
 
 # 🛠 Function: Install
 install_script() {
-    log_message "🛠 Installing script..."
+    if [[ -z "$1" ]]; then
+        echo "Usage: $0 install <API_URL>"
+        exit 1
+    fi
 
-    # Prompt for API details
-    read -p "Enter API Update URL (e.g., https://api.yourdomain.com): " API_URL
-    read -p "Enter APP_API_KEY: " APP_API_KEY
+    API_URL="$1"
+    log_message "🛠 Installing script using API: $API_URL"
+
+    # Fetch MAC address
+    MAC_ADDRESS=$(get_mac_address)
+
+    # Call API /init to get APP_API_KEY
+    RESPONSE=$(curl -s -X POST "$API_URL/init" -H "Content-Type: application/json" -d "{\"macAddress\": \"$MAC_ADDRESS\"}")
+
+    if echo "$RESPONSE" | grep -q "appApiKey"; then
+        APP_API_KEY=$(echo "$RESPONSE" | jq -r '.appApiKey')
+        log_message "✅ API key received and stored securely."
+    else
+        log_message "❌ Failed to retrieve API key. Response: $RESPONSE"
+        exit 1
+    fi
 
     write_config  # Save API details
 
@@ -121,13 +137,13 @@ case "$1" in
         update_api
         ;;
     install)
-        install_script
+        install_script "$2"
         ;;
     remove)
         remove_script
         ;;
     *)
-        echo "Usage: $0 {install|update|remove}"
+        echo "Usage: $0 {install <API_URL>|update|remove}"
         exit 1
         ;;
 esac

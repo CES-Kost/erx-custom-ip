@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Header
+from fastapi import FastAPI, HTTPException, Request
 import requests
 import os
 import json
@@ -18,6 +18,8 @@ HEADERS = {
     "x-auth-token": API_KEY
 }
 
+### 🔍 Helper Functions ###
+
 def normalize_mac(mac):
     """Normalize MAC address by removing colons and converting to lowercase."""
     return mac.lower().replace(":", "")
@@ -29,21 +31,13 @@ def get_device_id_by_mac(mac_address):
 
     try:
         response = requests.get(url, headers=HEADERS)
-
         if response.status_code != 200:
             print(f"❌ Failed to fetch devices: {response.status_code} - {response.text}")
-            raise HTTPException(status_code=response.status_code, detail=f"Failed to fetch devices: {response.text}")
+            return None
 
-        try:
-            devices = response.json()
-        except json.decoder.JSONDecodeError:
-            print("❌ UISP API returned an invalid JSON response!")
-            raise HTTPException(status_code=500, detail="UISP API returned an invalid JSON response.")
+        devices = response.json()
+        normalized_mac = normalize_mac(mac_address)
 
-        normalized_mac = normalize_mac(mac_address)  # Normalize the MAC address
-        print(f"🔍 Looking for MAC: {normalized_mac} in device list...")
-
-        # Match MAC address ignoring case and colons
         for device in devices:
             device_mac = device.get("identification", {}).get("mac", "")
             if normalize_mac(device_mac) == normalized_mac:
@@ -51,25 +45,72 @@ def get_device_id_by_mac(mac_address):
                 return device.get("identification", {}).get("id")
 
         print(f"❌ No device found with MAC: {mac_address}")
-        return None  # Return None if no match is found
+        return None
 
     except requests.RequestException as e:
         print(f"❌ Connection error when fetching devices: {e}")
-        raise HTTPException(status_code=500, detail="UISP API connection error.")
+        return None
+
+def get_unms_settings(device_id):
+    """Fetch the current UNMS system settings for a device."""
+    get_url = f"{UISP_API_BASE_URL}/devices/{device_id}/system/unms"
+    print(f"📡 Fetching current UNMS settings from: {get_url}")
+
+    response = requests.get(get_url, headers=HEADERS)
+    if response.status_code != 200:
+        print(f"❌ Failed to fetch device settings: {response.status_code} - {response.text}")
+        return None
+
+    return response.json()
+
+def update_unms_settings(device_id, updated_payload):
+    """Send the updated UNMS system settings back to UISP."""
+    put_url = f"{UISP_API_BASE_URL}/devices/{device_id}/system/unms"
+    print(f"📦 Sending update request to: {put_url}")
+    print(f"📦 Payload: {json.dumps(updated_payload, indent=2)}")
+
+    put_response = requests.put(put_url, headers=HEADERS, json=updated_payload)
+
+    print(f"📦 Response Status: {put_response.status_code}")
+    print(f"📦 Response Body: {put_response.text}")
+
+    if put_response.status_code != 200:
+        print(f"❌ Failed to update device: {put_response.status_code} - {put_response.text}")
+        return False
+
+    return True
+
+
+### 🌟 API Endpoints ###
+
+@app.post("/init")
+async def init_router(request: Request):
+    """Initialize router by looking up MAC address and returning the APP_API_KEY."""
+    body = await request.json()
+    mac_address = body.get("macAddress")
+
+    if not mac_address:
+        raise HTTPException(status_code=400, detail="Missing required parameter: macAddress")
+
+    device_id = get_device_id_by_mac(mac_address)
+
+    if not device_id:
+        raise HTTPException(status_code=404, detail=f"Device with MAC {mac_address} not found.")
+
+    return {"message": "✅ Router initialized successfully!", "appApiKey": APP_API_KEY}
 
 @app.post("/update-ip")
-async def update_device_ip(request: Request, authorization: str = Header(None)):
+async def update_device_ip(request: Request):
     """Update the public IP in the UISP custom IP settings using MAC address."""
-    
-    # Validate API Key
-    if authorization != f"Bearer {APP_API_KEY}":
-        print("❌ Invalid API Key provided")
-        raise HTTPException(status_code=403, detail="Invalid API key")
-
-    # Get request JSON
     body = await request.json()
     mac_address = body.get("macAddress")
     public_ip = body.get("publicIp")
+    auth_key = request.headers.get("Authorization")
+
+    # Validate API Key
+    if not auth_key or auth_key != f"Bearer {APP_API_KEY}":
+        print("❌ Invalid API Key provided")
+        raise HTTPException(status_code=403, detail="Invalid API key")
 
     if not mac_address or not public_ip:
         print("❌ Missing required parameters in request")
@@ -82,16 +123,10 @@ async def update_device_ip(request: Request, authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail=f"Device with MAC {mac_address} not found.")
 
     # Get current device settings
-    get_url = f"{UISP_API_BASE_URL}/devices/{device_id}/system/unms"
-    print(f"📡 Fetching current UNMS settings from: {get_url}")
+    current_settings = get_unms_settings(device_id)
+    if not current_settings:
+        raise HTTPException(status_code=500, detail="Failed to fetch current UNMS settings")
 
-    response = requests.get(get_url, headers=HEADERS)
-
-    if response.status_code != 200:
-        print(f"❌ Failed to fetch device settings: {response.status_code} - {response.text}")
-        raise HTTPException(status_code=response.status_code, detail=f"Failed to fetch device settings: {response.text}")
-
-    current_settings = response.json()
     print(f"📡 Current device settings: {json.dumps(current_settings, indent=2)}")
 
     # Ensure all required fields are present and replace `None` or `"null"` with default values
@@ -113,18 +148,9 @@ async def update_device_ip(request: Request, authorization: str = Header(None)):
         }
     }
 
-    print(f"📦 Sending update request to: {get_url}")
-    print(f"📦 Payload: {json.dumps(updated_payload, indent=2)}")
-
-    # Send update request
-    put_response = requests.put(get_url, headers=HEADERS, json=updated_payload)
-
-    print(f"📦 Response Status: {put_response.status_code}")
-    print(f"📦 Response Body: {put_response.text}")
-
-    if put_response.status_code != 200:
-        print(f"❌ Failed to update device: {put_response.status_code} - {put_response.text}")
-        raise HTTPException(status_code=put_response.status_code, detail=f"Failed to update device: {put_response.text}")
+    # Send the update request
+    if not update_unms_settings(device_id, updated_payload):
+        raise HTTPException(status_code=500, detail="Failed to update UNMS settings")
 
     return {
         "message": "✅ Public IP updated successfully!",
