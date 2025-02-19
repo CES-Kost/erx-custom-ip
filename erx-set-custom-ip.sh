@@ -2,7 +2,7 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.6"
+SCRIPT_VERSION="1.7"
 
 # 📌 Config file location
 CONFIG_FILE="/config/scripts/update_custom_ip.conf"
