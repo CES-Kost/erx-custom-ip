@@ -1,71 +1,86 @@
 #!/bin/vbash
 source /opt/vyatta/etc/functions/script-template
 
-SCRIPT_PATH="/config/scripts/update_custom_ip.sh"
-LOG_FILE="/var/log/custom_ip_update.log"
-CRON_JOB="0 */3 * * * $SCRIPT_PATH update >> $LOG_FILE 2>&1"
+# 🔥 Version of this script
+SCRIPT_VERSION="1.0"
 
-# Function to fetch the public IP
-get_public_ip() {
-    curl -s ifconfig.me
+# 📌 GitHub repo for updates
+GITHUB_REPO="CES-Kost/erx-custom-ip"
+SCRIPT_NAME="erx-set-custom-ip.sh"
+SCRIPT_PATH="/config/scripts/update_custom_ip.sh"
+LOG_FILE="/var/log/update_custom_ip.log"
+
+# 🛠 Function: Log messages
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
 }
 
-# Function to update the system UNMS custom IP
-update_custom_ip() {
-    PUBLIC_IP=$(get_public_ip)
+# 🔄 Function: Check for script updates
+update_script() {
+    log_message "🔄 Checking for script updates..."
 
+    # Get latest version from GitHub
+    LATEST_VERSION=$(curl -s "https://raw.githubusercontent.com/$GITHUB_REPO/main/version.txt")
+
+    if [[ "$LATEST_VERSION" != "$SCRIPT_VERSION" ]]; then
+        log_message "🚀 New version ($LATEST_VERSION) available! Updating script..."
+        curl -sL "https://raw.githubusercontent.com/$GITHUB_REPO/main/$SCRIPT_NAME" -o "$SCRIPT_PATH"
+        chmod +x "$SCRIPT_PATH"
+        log_message "✅ Script updated to version $LATEST_VERSION. Restarting..."
+        exec "$SCRIPT_PATH" update
+    else
+        log_message "✔️ Script is up to date (v$SCRIPT_VERSION)."
+    fi
+}
+
+# 🌎 Get public IP
+get_public_ip() {
+    PUBLIC_IP=$(curl -s ifconfig.me)
     if [[ -z "$PUBLIC_IP" ]]; then
-        echo "❌ Failed to retrieve public IP."
+        log_message "❌ Failed to retrieve public IP."
         exit 1
     fi
+    echo "$PUBLIC_IP"
+}
 
-    echo "🌍 Setting Public IP: $PUBLIC_IP"
+# 🚀 Function: Set override-hostname-ip
+update_override_ip() {
+    PUBLIC_IP=$(get_public_ip)
+    log_message "🌍 Setting Public IP: $PUBLIC_IP"
 
     configure
-    set system unms custom-ip "$PUBLIC_IP"
+    set system ip override-hostname-ip "$PUBLIC_IP"
     commit
     save
     exit
 
-    echo "✅ Public IP updated successfully!"
+    log_message "✅ Public IP updated successfully!"
 }
 
-# Function to install the cron job
+# 🛠 Function: Install cron job
 install_cron() {
-    echo "🛠 Installing cron job to update public IP every 3 hours..."
+    log_message "🛠 Installing cron job to update public IP every 3 hours..."
 
-    # Ensure script is executable
-    chmod +x "$SCRIPT_PATH"
+    # Add cron job (if not exists)
+    (crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH" ) || (
+        echo "0 */3 * * * $SCRIPT_PATH update" | crontab -
+    )
 
-    # Add cron job (Check if already exists)
-    if crontab -l | grep -q "update_custom_ip.sh"; then
-        echo "⚡ Cron job already exists. Skipping installation."
-    else
-        (crontab -l 2>/dev/null; echo "$CRON_JOB") | crontab -
-        echo "✅ Cron job installed successfully."
-    fi
+    log_message "✅ Cron job installed successfully."
 }
 
-# Function to remove the cron job
-remove_cron() {
-    echo "🛑 Removing scheduled cron job..."
-    crontab -l | grep -v "update_custom_ip.sh" | crontab -
-    echo "✅ Cron job removed."
-}
-
-# Script execution
+# 🔧 Handle script actions
 case "$1" in
     update)
-        update_custom_ip
+        update_script
+        update_override_ip
         ;;
     install)
         install_cron
-        ;;
-    remove)
-        remove_cron
+        update_override_ip
         ;;
     *)
-        echo "Usage: $0 {install|update|remove}"
+        echo "Usage: $0 {install|update}"
         exit 1
         ;;
 esac
