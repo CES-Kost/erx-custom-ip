@@ -42,7 +42,13 @@ def get_device_by_mac(mac_address):
             device_mac = device.get("identification", {}).get("mac", "")
             if normalize_mac(device_mac) == normalized_mac:
                 device_id = device.get("identification", {}).get("id")
-                device_name = device.get("identification", {}).get("name", "Unknown")
+                device_name = device.get("identification", {}).get("name", "")
+                device_hostname = device.get("identification", {}).get("hostname", "")
+
+                # 🔥 Fix: Use hostname if name is missing
+                if not device_name:
+                    device_name = device_hostname if device_hostname else "Unknown"
+
                 print(f"✅ Found device: ID {device_id}, Name {device_name}, MAC {device_mac}")
                 return {"id": device_id, "name": device_name}
 
@@ -146,7 +152,7 @@ async def update_device_ip(request: Request):
         "deviceTransmissionFrequency": get_value(current_settings.get("deviceTransmissionFrequency"), "minimal"),
         "deviceGracePeriodOutage": get_value(current_settings.get("deviceGracePeriodOutage"), 300000),
         "meta": {
-            "alias": device_name,  # ✅ Set alias to device name to prevent it from being blank
+            "alias": device_name,  # ✅ Fix: Now uses device name OR hostname
             "note": get_value(current_settings.get("meta", {}).get("note"), ""),
             "maintenance": get_value(current_settings.get("meta", {}).get("maintenance"), False),
             "customIpAddress": public_ip  # ✅ Update only the IP
