@@ -87,13 +87,31 @@ async def update_device_ip(request: Request, authorization: str = Header(None)):
 
     current_settings = response.json()
 
-    # Ensure all required fields are kept intact while updating customIpAddress
-    updated_payload = current_settings.copy()
-    updated_payload["meta"]["customIpAddress"] = public_ip  # ✅ Update only the IP
+    # Extract required fields while keeping existing values
+    updated_payload = {
+        "overrideGlobal": current_settings.get("overrideGlobal", False),
+        "devicePingAddress": current_settings.get("devicePingAddress", "1.1.1.1"),
+        "devicePingIntervalNormal": current_settings.get("devicePingIntervalNormal", 300000),
+        "devicePingIntervalOutage": current_settings.get("devicePingIntervalOutage", 300000),
+        "deviceTransmissionFrequency": current_settings.get("deviceTransmissionFrequency", "minimal"),
+        "deviceGracePeriodOutage": current_settings.get("deviceGracePeriodOutage", 300000),
+        "meta": {
+            "alias": current_settings.get("meta", {}).get("alias", ""),
+            "note": current_settings.get("meta", {}).get("note", ""),
+            "maintenance": current_settings.get("meta", {}).get("maintenance", False),
+            "customIpAddress": public_ip  # ✅ Update only the IP
+        }
+    }
+
+    print(f"📦 Sending update request to: {get_url}")
+    print(f"📦 Payload: {json.dumps(updated_payload, indent=2)}")
 
     # Send update request
     put_url = f"{UISP_API_BASE_URL}/devices/{device_id}/system/unms"
     put_response = requests.put(put_url, headers=HEADERS, json=updated_payload)
+
+    print(f"📦 Response Status: {put_response.status_code}")
+    print(f"📦 Response Body: {put_response.text}")
 
     if put_response.status_code != 200:
         raise HTTPException(status_code=put_response.status_code, detail=f"Failed to update device: {put_response.text}")
