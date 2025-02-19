@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 import requests
 import os
 import json
+from datetime import datetime
 
 # Create FastAPI app
 app = FastAPI()
@@ -140,6 +141,10 @@ async def update_device_ip(request: Request):
 
     print(f"📡 Current device settings: {json.dumps(current_settings, indent=2)}")
 
+    # Generate the timestamp in UTC
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    last_updated_note = f"Public IP Last Updated: {timestamp}"
+
     # Ensure all required fields are present and replace `None` or `"null"` with default values
     def get_value(field, default):
         return default if field is None or field == "null" else field
@@ -153,7 +158,7 @@ async def update_device_ip(request: Request):
         "deviceGracePeriodOutage": get_value(current_settings.get("deviceGracePeriodOutage"), 300000),
         "meta": {
             "alias": device_name,  # ✅ Fix: Now uses device name OR hostname
-            "note": get_value(current_settings.get("meta", {}).get("note"), ""),
+            "note": last_updated_note,  # ✅ Adds timestamp to the note field
             "maintenance": get_value(current_settings.get("meta", {}).get("maintenance"), False),
             "customIpAddress": public_ip  # ✅ Update only the IP
         }
@@ -167,5 +172,6 @@ async def update_device_ip(request: Request):
         "message": "✅ Public IP updated successfully!",
         "deviceId": device_id,
         "macAddress": mac_address,
-        "publicIp": public_ip
+        "publicIp": public_ip,
+        "lastUpdated": timestamp
     }
