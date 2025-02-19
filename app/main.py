@@ -63,6 +63,7 @@ async def update_device_ip(request: Request, authorization: str = Header(None)):
     
     # Validate API Key
     if authorization != f"Bearer {APP_API_KEY}":
+        print("❌ Invalid API Key provided")
         raise HTTPException(status_code=403, detail="Invalid API key")
 
     # Get request JSON
@@ -71,27 +72,32 @@ async def update_device_ip(request: Request, authorization: str = Header(None)):
     public_ip = body.get("publicIp")
 
     if not mac_address or not public_ip:
+        print("❌ Missing required parameters in request")
         raise HTTPException(status_code=400, detail="Missing required parameters (macAddress, publicIp)")
 
     # Find the device ID using MAC address
     device_id = get_device_id_by_mac(mac_address)
     if not device_id:
+        print(f"❌ No device found for MAC {mac_address}")
         raise HTTPException(status_code=404, detail=f"Device with MAC {mac_address} not found.")
 
     # Get current device settings
     get_url = f"{UISP_API_BASE_URL}/devices/{device_id}/system/unms"
+    print(f"📡 Fetching current UNMS settings from: {get_url}")
+
     response = requests.get(get_url, headers=HEADERS)
 
     if response.status_code != 200:
+        print(f"❌ Failed to fetch device settings: {response.status_code} - {response.text}")
         raise HTTPException(status_code=response.status_code, detail=f"Failed to fetch device settings: {response.text}")
 
     current_settings = response.json()
+    print(f"📡 Current device settings: {json.dumps(current_settings, indent=2)}")
 
-    # Helper function to replace None or "null" with a default value
+    # Ensure all required fields are present and replace `None` or `"null"` with default values
     def get_value(field, default):
         return default if field is None or field == "null" else field
 
-    # Ensure all required fields are present and replace `None` or `"null"` with default values
     updated_payload = {
         "overrideGlobal": get_value(current_settings.get("overrideGlobal"), False),
         "devicePingAddress": get_value(current_settings.get("devicePingAddress"), "1.1.1.1"),
@@ -107,17 +113,17 @@ async def update_device_ip(request: Request, authorization: str = Header(None)):
         }
     }
 
-    print(f"📦 Sending update request to: {put_url}")
+    print(f"📦 Sending update request to: {get_url}")
     print(f"📦 Payload: {json.dumps(updated_payload, indent=2)}")
 
     # Send update request
-    put_url = f"{UISP_API_BASE_URL}/devices/{device_id}/system/unms"
-    put_response = requests.put(put_url, headers=HEADERS, json=updated_payload)
+    put_response = requests.put(get_url, headers=HEADERS, json=updated_payload)
 
     print(f"📦 Response Status: {put_response.status_code}")
     print(f"📦 Response Body: {put_response.text}")
 
     if put_response.status_code != 200:
+        print(f"❌ Failed to update device: {put_response.status_code} - {put_response.text}")
         raise HTTPException(status_code=put_response.status_code, detail=f"Failed to update device: {put_response.text}")
 
     return {
