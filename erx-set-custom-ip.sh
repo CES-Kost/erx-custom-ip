@@ -2,7 +2,7 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.1"
+SCRIPT_VERSION="1.2"
 
 # 📌 GitHub repo for updates
 GITHUB_REPO="CES-Kost/erx-custom-ip"
@@ -71,6 +71,29 @@ install_cron() {
     log_message "✅ Cron job installed successfully."
 }
 
+# 🗑 Function: Remove script and settings
+remove_script() {
+    log_message "🚨 Removing script and settings..."
+
+    # Remove cron job
+    log_message "🛠 Removing cron job..."
+    crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | crontab -
+
+    # Delete override-hostname-ip
+    log_message "🗑 Removing override-hostname-ip..."
+    configure
+    delete system ip override-hostname-ip
+    commit
+    save
+    exit
+
+    # Remove script
+    log_message "🗑 Deleting script file..."
+    rm -f "$SCRIPT_PATH"
+
+    log_message "✅ Removal completed!"
+}
+
 # 🔧 Handle script actions
 case "$1" in
     update)
@@ -81,8 +104,11 @@ case "$1" in
         install_cron
         update_override_ip
         ;;
+    remove)
+        remove_script
+        ;;
     *)
-        echo "Usage: $0 {install|update}"
+        echo "Usage: $0 {install|update|remove}"
         exit 1
         ;;
 esac
