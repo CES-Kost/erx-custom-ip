@@ -24,8 +24,8 @@ def normalize_mac(mac):
     """Normalize MAC address by removing colons and converting to lowercase."""
     return mac.lower().replace(":", "")
 
-def get_device_id_by_mac(mac_address):
-    """Fetch the device ID from UISP using the MAC address."""
+def get_device_by_mac(mac_address):
+    """Fetch the device details from UISP using the MAC address."""
     url = f"{UISP_API_BASE_URL}/devices"
     print(f"🔍 Fetching devices list from UISP API: {url}")
 
@@ -41,8 +41,10 @@ def get_device_id_by_mac(mac_address):
         for device in devices:
             device_mac = device.get("identification", {}).get("mac", "")
             if normalize_mac(device_mac) == normalized_mac:
-                print(f"✅ Found device with MAC {mac_address}: Device ID {device.get('identification', {}).get('id')}")
-                return device.get("identification", {}).get("id")
+                device_id = device.get("identification", {}).get("id")
+                device_name = device.get("identification", {}).get("name", "Unknown")
+                print(f"✅ Found device: ID {device_id}, Name {device_name}, MAC {device_mac}")
+                return {"id": device_id, "name": device_name}
 
         print(f"❌ No device found with MAC: {mac_address}")
         return None
@@ -92,9 +94,9 @@ async def init_router(request: Request):
     if not mac_address:
         raise HTTPException(status_code=400, detail="Missing required parameter: macAddress")
 
-    device_id = get_device_id_by_mac(mac_address)
+    device = get_device_by_mac(mac_address)
 
-    if not device_id:
+    if not device:
         raise HTTPException(status_code=404, detail=f"Device with MAC {mac_address} not found.")
 
     return {"message": "✅ Router initialized successfully!", "appApiKey": APP_API_KEY}
@@ -116,11 +118,14 @@ async def update_device_ip(request: Request):
         print("❌ Missing required parameters in request")
         raise HTTPException(status_code=400, detail="Missing required parameters (macAddress, publicIp)")
 
-    # Find the device ID using MAC address
-    device_id = get_device_id_by_mac(mac_address)
-    if not device_id:
+    # Find the device details using MAC address
+    device = get_device_by_mac(mac_address)
+    if not device:
         print(f"❌ No device found for MAC {mac_address}")
         raise HTTPException(status_code=404, detail=f"Device with MAC {mac_address} not found.")
+
+    device_id = device["id"]
+    device_name = device["name"]  # Use this for the alias
 
     # Get current device settings
     current_settings = get_unms_settings(device_id)
@@ -141,7 +146,7 @@ async def update_device_ip(request: Request):
         "deviceTransmissionFrequency": get_value(current_settings.get("deviceTransmissionFrequency"), "minimal"),
         "deviceGracePeriodOutage": get_value(current_settings.get("deviceGracePeriodOutage"), 300000),
         "meta": {
-            "alias": get_value(current_settings.get("meta", {}).get("alias"), ""),
+            "alias": device_name,  # ✅ Set alias to device name to prevent it from being blank
             "note": get_value(current_settings.get("meta", {}).get("note"), ""),
             "maintenance": get_value(current_settings.get("meta", {}).get("maintenance"), False),
             "customIpAddress": public_ip  # ✅ Update only the IP
