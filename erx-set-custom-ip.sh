@@ -25,7 +25,7 @@ get_public_ip() {
 
 # 🔍 Function: Get MAC Address
 get_mac_address() {
-    cat /sys/class/net/eth0/address | tr -d ':'
+    cat /sys/class/net/eth0/address
 }
 
 # 📡 Function: Read/Write Config File

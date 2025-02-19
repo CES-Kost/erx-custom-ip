@@ -17,6 +17,10 @@ HEADERS = {
     "x-auth-token": API_KEY
 }
 
+def normalize_mac(mac):
+    """Normalize MAC address by removing colons and converting to lowercase."""
+    return mac.lower().replace(":", "")
+
 def get_device_id_by_mac(mac_address):
     """Fetch the device ID from UISP using the MAC address."""
     url = f"{UISP_API_BASE_URL}/devices"
@@ -26,10 +30,12 @@ def get_device_id_by_mac(mac_address):
         raise HTTPException(status_code=response.status_code, detail=f"Failed to fetch devices: {response.text}")
 
     devices = response.json()
+    normalized_mac = normalize_mac(mac_address)  # Normalize the MAC address
 
-    # Look for the device with the matching MAC address
+    # Match MAC address ignoring case and colons
     for device in devices:
-        if device.get("identification", {}).get("mac", "").lower() == mac_address.lower():
+        device_mac = device.get("identification", {}).get("mac", "")
+        if normalize_mac(device_mac) == normalized_mac:
             return device.get("identification", {}).get("id")
 
     return None  # Return None if no match is found
