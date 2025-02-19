@@ -2,15 +2,36 @@
 source /opt/vyatta/etc/functions/script-template
 
 # 🔥 Version of this script
-SCRIPT_VERSION="1.7"
+SCRIPT_VERSION="1.8"
 
 # 📌 Config file location
 CONFIG_FILE="/config/scripts/update_custom_ip.conf"
 LOG_FILE="/var/log/update_custom_ip.log"
+SCRIPT_PATH="/config/scripts/update_custom_ip.sh"
+GITHUB_REPO="CES-Kost/erx-custom-ip"
+VERSION_FILE_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main/version.txt"
+SCRIPT_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main/update_custom_ip.sh"
 
 # 🛠 Function: Log messages
 log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+# 🔄 Function: Check for script updates
+update_script() {
+    log_message "🔄 Checking for script updates..."
+
+    LATEST_VERSION=$(curl -s "$VERSION_FILE_URL")
+    
+    if [[ "$LATEST_VERSION" != "$SCRIPT_VERSION" ]]; then
+        log_message "🚀 New version ($LATEST_VERSION) available! Updating script..."
+        curl -sL "$SCRIPT_URL" -o "$SCRIPT_PATH"
+        chmod +x "$SCRIPT_PATH"
+        log_message "✅ Script updated to version $LATEST_VERSION. Restarting..."
+        exec "$SCRIPT_PATH" update
+    else
+        log_message "✔️ Script is up to date (v$SCRIPT_VERSION)."
+    fi
 }
 
 # 🌎 Function: Get public IP
@@ -71,8 +92,8 @@ install_script() {
 
     # Install cron job
     log_message "🛠 Installing cron job to update public IP every 3 hours..."
-    (crontab -l 2>/dev/null | grep -q "$0" ) || (
-        echo "0 */3 * * * $0 update" | crontab -
+    (crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH" ) || (
+        echo "0 */3 * * * $SCRIPT_PATH update" | crontab -
     )
 
     log_message "✅ Installation complete!"
@@ -84,7 +105,7 @@ remove_script() {
 
     # Remove cron job
     log_message "🛠 Removing cron job..."
-    crontab -l 2>/dev/null | grep -v "$0" | crontab -
+    crontab -l 2>/dev/null | grep -v "$SCRIPT_PATH" | crontab -
 
     # Remove config file
     log_message "🗑 Deleting config file..."
@@ -96,6 +117,7 @@ remove_script() {
 # 🔧 Handle script actions
 case "$1" in
     update)
+        update_script
         update_api
         ;;
     install)
