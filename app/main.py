@@ -87,23 +87,27 @@ async def update_device_ip(request: Request, authorization: str = Header(None)):
 
     current_settings = response.json()
 
-    # Extract required fields while keeping existing values
+    # Helper function to replace None or "null" with a default value
+    def get_value(field, default):
+        return default if field is None or field == "null" else field
+
+    # Ensure all required fields are present and replace `None` or `"null"` with default values
     updated_payload = {
-        "overrideGlobal": current_settings.get("overrideGlobal", False),
-        "devicePingAddress": current_settings.get("devicePingAddress", "1.1.1.1"),
-        "devicePingIntervalNormal": current_settings.get("devicePingIntervalNormal", 300000),
-        "devicePingIntervalOutage": current_settings.get("devicePingIntervalOutage", 300000),
-        "deviceTransmissionFrequency": current_settings.get("deviceTransmissionFrequency", "minimal"),
-        "deviceGracePeriodOutage": current_settings.get("deviceGracePeriodOutage", 300000),
+        "overrideGlobal": get_value(current_settings.get("overrideGlobal"), False),
+        "devicePingAddress": get_value(current_settings.get("devicePingAddress"), "1.1.1.1"),
+        "devicePingIntervalNormal": get_value(current_settings.get("devicePingIntervalNormal"), 300000),
+        "devicePingIntervalOutage": get_value(current_settings.get("devicePingIntervalOutage"), 300000),
+        "deviceTransmissionFrequency": get_value(current_settings.get("deviceTransmissionFrequency"), "minimal"),
+        "deviceGracePeriodOutage": get_value(current_settings.get("deviceGracePeriodOutage"), 300000),
         "meta": {
-            "alias": current_settings.get("meta", {}).get("alias", ""),
-            "note": current_settings.get("meta", {}).get("note", ""),
-            "maintenance": current_settings.get("meta", {}).get("maintenance", False),
+            "alias": get_value(current_settings.get("meta", {}).get("alias"), ""),
+            "note": get_value(current_settings.get("meta", {}).get("note"), ""),
+            "maintenance": get_value(current_settings.get("meta", {}).get("maintenance"), False),
             "customIpAddress": public_ip  # ✅ Update only the IP
         }
     }
 
-    print(f"📦 Sending update request to: {get_url}")
+    print(f"📦 Sending update request to: {put_url}")
     print(f"📦 Payload: {json.dumps(updated_payload, indent=2)}")
 
     # Send update request
